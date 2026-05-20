@@ -33,9 +33,7 @@ jobs:
             label: windows-x64
           - os: ubuntu-22.04
             label: linux-x64
-          - os: macos-13      # Intel
-            label: macos-x64
-          - os: macos-14      # Apple Silicon
+          - os: macos-14      # Apple Silicon (also runs on Intel Macs via Rosetta 2)
             label: macos-arm64
 
     steps:
