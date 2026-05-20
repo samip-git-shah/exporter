@@ -104,28 +104,26 @@ jobs:
             codesign --verify --verbose dist/TestCaseExporter.app || true
           fi
 
-      - name: Package zip
+      - name: Package zip (macOS)
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
-          OS=$(python -c "import platform; print(platform.system().lower())")
           ARCH=$(python -c "import platform; print(platform.machine().lower())")
-          ZIP="dist/TestCaseExporter-${OS}-${ARCH}.zip"
-
-          if [ "$OS" = "darwin" ] && [ -d "dist/TestCaseExporter.app" ]; then
+          ZIP="dist/TestCaseExporter-darwin-${ARCH}.zip"
+          if [ -d "dist/TestCaseExporter.app" ]; then
             ditto -c -k --sequesterRsrc --keepParent dist/TestCaseExporter.app "$ZIP"
           else
-            python -c "
-import zipfile, pathlib, sys
-out = pathlib.Path(sys.argv[1])
-src = pathlib.Path('dist/TestCaseExporter')
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-    for p in src.rglob('*'):
-        if p.is_file():
-            zf.write(p, p.relative_to(src.parent))
-print(f'wrote {out} ({out.stat().st_size/1024/1024:.1f} MB)')
-" "$ZIP"
+            python scripts/zip_bundle.py
           fi
+          ls -la dist/
+
+      - name: Package zip (Windows + Linux)
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/zip_bundle.py
           ls -la dist/
 
       - name: Upload bundle as artifact
