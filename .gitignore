@@ -1,0 +1,25 @@
+# Build artefacts
+build/
+dist/
+.build-venv/
+.venv/
+*.spec.bak
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Logs
+app.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Project clutter not needed in repo
+Exporter.zip
+logo_old.png

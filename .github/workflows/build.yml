@@ -1,0 +1,80 @@
+name: Build TC-Exporter bundles
+
+# Builds self-contained PyInstaller bundles for Windows, Linux, and macOS
+# (Apple Silicon + Intel). Each runner installs Chromium into the playwright
+# package via PLAYWRIGHT_BROWSERS_PATH=0 so the browser ships inside the zip.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # lets you trigger a build manually from the Actions tab
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: ubuntu-22.04
+            label: linux-x64
+          - os: macos-13       # Intel
+            label: macos-x64
+          - os: macos-14       # Apple Silicon
+            label: macos-arm64
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Linux — install Chromium runtime libs
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgbm1 libnss3 libxkbcommon0 libasound2 \
+              libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxdamage1 \
+              libxcomposite1 libxrandr2 libpango-1.0-0 libcairo2
+
+      - name: Run build.py
+        run: python build.py
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
+
+      - name: Upload bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestCaseExporter-${{ matrix.label }}
+          path: dist/TestCaseExporter-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach bundles to GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/TestCaseExporter-*.zip
+          generate_release_notes: true
