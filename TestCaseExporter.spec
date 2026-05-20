@@ -12,8 +12,6 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-block_cipher = None
-
 # ---- App resources -----------------------------------------------------------
 datas = [
     ("logo.png", "."),
@@ -55,13 +53,10 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 # Icon: Windows wants .ico, macOS wants .icns. Use only if present beside the spec.
 _icon_candidates = {"win32": "logo.ico", "darwin": "logo.icns"}

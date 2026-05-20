@@ -84,26 +84,47 @@ def build_bundle() -> None:
     if app_bundle.exists():
         shutil.rmtree(app_bundle, ignore_errors=True)
 
-    run([py, "-m", "PyInstaller", "--noconfirm", str(SPEC_FILE)], env=env)
+    run([py, "-m", "PyInstaller", "--clean", "--noconfirm",
+         "--log-level", "WARN", str(SPEC_FILE)], env=env)
+
+    # macOS: ad-hoc sign the .app so Gatekeeper won't refuse to launch it
+    # when the user double-clicks. Real distribution still wants a real signature.
+    if platform.system() == "Darwin" and (DIST_DIR / f"{APP_NAME}.app").exists():
+        try:
+            run(["codesign", "--force", "--deep", "--sign", "-",
+                 str(DIST_DIR / f"{APP_NAME}.app")])
+        except subprocess.CalledProcessError as exc:
+            print(f"WARNING: ad-hoc codesign failed ({exc}); bundle still usable")
 
 
 def package_zip() -> Path | None:
-    """Zip the onedir bundle for easy distribution."""
-    src = DIST_DIR / APP_NAME
-    if not src.exists():
-        print(f"WARNING: expected {src} not found; skipping zip step")
-        return None
+    """Zip the onedir bundle for easy distribution.
 
+    macOS: zip the .app via `ditto` so framework symlinks/extended attrs
+    survive (Python's zipfile mangles them and breaks Gatekeeper).
+    """
     sysname = platform.system().lower()
     arch = platform.machine().lower()
     out = DIST_DIR / f"{APP_NAME}-{sysname}-{arch}.zip"
     if out.exists():
         out.unlink()
 
-    print(f"\nZipping bundle to {out}")
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-        for path in src.rglob("*"):
-            zf.write(path, path.relative_to(DIST_DIR))
+    if platform.system() == "Darwin" and (DIST_DIR / f"{APP_NAME}.app").exists():
+        src = DIST_DIR / f"{APP_NAME}.app"
+        print(f"\nZipping {src} -> {out} (ditto)")
+        run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent",
+             str(src), str(out)])
+    else:
+        src = DIST_DIR / APP_NAME
+        if not src.exists():
+            print(f"WARNING: expected {src} not found; skipping zip step")
+            return None
+        print(f"\nZipping bundle to {out}")
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for path in src.rglob("*"):
+                if path.is_file():
+                    zf.write(path, path.relative_to(DIST_DIR))
+
     print(f"  size: {out.stat().st_size / 1024 / 1024:.1f} MB")
     return out
 

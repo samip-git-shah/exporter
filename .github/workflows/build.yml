@@ -3,6 +3,9 @@ name: Build TC-Exporter bundles
 # Builds self-contained PyInstaller bundles for Windows, Linux, and macOS
 # (Apple Silicon + Intel). Each runner installs Chromium into the playwright
 # package via PLAYWRIGHT_BROWSERS_PATH=0 so the browser ships inside the zip.
+#
+# The build is split into discrete steps so any failure is attributable to
+# a single command rather than the all-in-one build.py wrapper.
 
 on:
   push:
@@ -10,7 +13,13 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main, master]
-  workflow_dispatch:  # lets you trigger a build manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  # Bundle Chromium *inside* the playwright package so PyInstaller bundles it.
+  PLAYWRIGHT_BROWSERS_PATH: "0"
+  # Be patient with the Chromium download on slow runners.
+  PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "120000"
 
 jobs:
   build:
@@ -24,9 +33,9 @@ jobs:
             label: windows-x64
           - os: ubuntu-22.04
             label: linux-x64
-          - os: macos-13       # Intel
+          - os: macos-13      # Intel
             label: macos-x64
-          - os: macos-14       # Apple Silicon
+          - os: macos-14      # Apple Silicon
             label: macos-arm64
 
     steps:
@@ -39,6 +48,25 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Diagnostics
+        shell: bash
+        run: |
+          echo "=== runner ==="
+          uname -a || true
+          echo "=== python ==="
+          python -VV
+          python -c "import platform; print(platform.platform()); print(platform.machine())"
+          echo "=== free disk ==="
+          df -h . || true
+
+      - name: Windows — enable long paths
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+            -Name "LongPathsEnabled" -Value 1 -Type DWord -Force
+          git config --system core.longpaths true
+
       - name: Linux — install Chromium runtime libs
         if: runner.os == 'Linux'
         run: |
@@ -47,10 +75,58 @@ jobs:
               libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxdamage1 \
               libxcomposite1 libxrandr2 libpango-1.0-0 libcairo2
 
-      - name: Run build.py
-        run: python build.py
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: "0"
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install -r requirements.txt
+          python -m pip freeze
+
+      - name: Install Chromium into the playwright package
+        shell: bash
+        run: |
+          python -m playwright install chromium
+          python -c "import playwright, os, pathlib; \
+            root = pathlib.Path(playwright.__file__).parent / 'driver' / 'package' / '.local-browsers'; \
+            print('chromium tree:', root); \
+            [print(' ', p.relative_to(root)) for p in list(root.rglob('*'))[:5]] if root.exists() else print('  (browsers stored elsewhere)')"
+
+      - name: Run PyInstaller
+        shell: bash
+        run: |
+          python -m PyInstaller --clean --noconfirm --log-level WARN TestCaseExporter.spec
+
+      - name: macOS — ad-hoc sign the .app
+        if: runner.os == 'macOS'
+        run: |
+          if [ -d "dist/TestCaseExporter.app" ]; then
+            codesign --force --deep --sign - dist/TestCaseExporter.app
+            codesign --verify --verbose dist/TestCaseExporter.app || true
+          fi
+
+      - name: Package zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          OS=$(python -c "import platform; print(platform.system().lower())")
+          ARCH=$(python -c "import platform; print(platform.machine().lower())")
+          ZIP="dist/TestCaseExporter-${OS}-${ARCH}.zip"
+
+          if [ "$OS" = "darwin" ] && [ -d "dist/TestCaseExporter.app" ]; then
+            ditto -c -k --sequesterRsrc --keepParent dist/TestCaseExporter.app "$ZIP"
+          else
+            python -c "
+import zipfile, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+src = pathlib.Path('dist/TestCaseExporter')
+with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+    for p in src.rglob('*'):
+        if p.is_file():
+            zf.write(p, p.relative_to(src.parent))
+print(f'wrote {out} ({out.stat().st_size/1024/1024:.1f} MB)')
+" "$ZIP"
+          fi
+          ls -la dist/
 
       - name: Upload bundle as artifact
         uses: actions/upload-artifact@v4
