@@ -110,7 +110,15 @@ jobs:
           ARCH=$(python -c "import platform; print(platform.machine().lower())")
           ZIP="dist/TestCaseExporter-darwin-${ARCH}.zip"
           if [ -d "dist/TestCaseExporter.app" ]; then
-            ditto -c -k --sequesterRsrc --keepParent dist/TestCaseExporter.app "$ZIP"
+            # Stage the .app + Setup.command together so the user can run
+            # Setup.command once to clear quarantine, then double-click the .app.
+            STAGE="dist/TestCaseExporter"
+            rm -rf "$STAGE"
+            mkdir -p "$STAGE"
+            ditto dist/TestCaseExporter.app "$STAGE/TestCaseExporter.app"
+            cp mac/Setup.command "$STAGE/Setup.command"
+            chmod +x "$STAGE/Setup.command"
+            ditto -c -k --sequesterRsrc --keepParent "$STAGE" "$ZIP"
           else
             python scripts/zip_bundle.py
           fi

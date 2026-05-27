@@ -14,43 +14,50 @@ dependencies are bundled inside the zip.
 
 ---
 
-## macOS — first-run Gatekeeper warning
+## macOS — first-run setup
 
 The app is ad-hoc signed but **not notarized** by Apple, so on macOS 15
-(Sequoia) and newer you will see:
+(Sequoia) and newer macOS will silently block it from launching unless
+you clear quarantine flags first. The zip ships with a setup script that
+does this for you.
 
-> *"Apple could not verify 'TestCaseExporter.app' is free of malware..."*
+### Recommended — run Setup.command once
 
-This is normal for unsigned apps. **Use the terminal command below — it's
-the only method that reliably works on macOS 15+.**
+1. Unzip `TestCaseExporter-darwin-arm64.zip`. You will see a folder
+   `TestCaseExporter/` containing two items:
+   - `TestCaseExporter.app`
+   - `Setup.command`
+2. Double-click **Setup.command**.
+3. The first time you run it, macOS will warn that it can't verify the
+   developer. Click **Done**, then go to
+   **System Settings → Privacy & Security**, scroll to *Security*, click
+   **Open Anyway** next to "Setup.command was blocked", and confirm with
+   your password.
+4. Run **Setup.command** again. It clears the quarantine flags on the
+   bundled app (one-time, takes a few seconds) and launches the app.
+5. From now on, just double-click `TestCaseExporter.app` directly — no
+   warnings, no setup.
 
-### Recommended — clear all extended attributes (one command)
+### Manual alternative — terminal command
+
+If the Setup.command path doesn't work, open Terminal and run:
 
 ```bash
 xattr -cr /path/to/TestCaseExporter.app
 ```
 
-Replace `/path/to/` with wherever you unzipped the app (e.g.
-`~/Downloads/TestCaseExporter.app`). After this, the app launches with a
-normal double-click — no warning.
+Replace `/path/to/` with wherever you unzipped the app. After this, the
+app launches normally on double-click.
 
-> **Why `-cr` and not `-dr com.apple.quarantine`?** macOS quarantines every
-> file inside the bundle, not just the `.app` wrapper. The `-cr` flag clears
-> *all* extended attributes recursively; `-dr com.apple.quarantine` only
-> drops one specific attribute, which can leave nested binaries (Chromium's
-> framework) blocked and the app fails silently.
-
-### Why "Open Anyway" alone often fails
-
-Using **System Settings → Privacy & Security → Open Anyway** dismisses the
-warning on the outer `.app` but leaves the quarantine flag set on every
-nested binary. The app appears to launch and then immediately exits with
-no error. If you've already clicked "Open Anyway" and the app still won't
-launch, run the `xattr -cr` command above.
+> **Why this is needed:** macOS quarantines every file inside the bundle,
+> not just the `.app` wrapper. Apple's "Open Anyway" only clears the
+> wrapper, leaving nested Chromium framework binaries blocked — the app
+> appears to launch and then immediately exits with no error. `xattr -cr`
+> (and Setup.command, which calls it) clears *every* nested file.
 
 ### Diagnosing a silent failure
 
-If double-clicking still does nothing after `xattr -cr`, run the inner
+If double-clicking still does nothing after the steps above, run the inner
 binary directly so any error becomes visible:
 
 ```bash

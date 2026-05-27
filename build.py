@@ -110,10 +110,21 @@ def package_zip() -> Path | None:
         out.unlink()
 
     if platform.system() == "Darwin" and (DIST_DIR / f"{APP_NAME}.app").exists():
-        src = DIST_DIR / f"{APP_NAME}.app"
-        print(f"\nZipping {src} -> {out} (ditto)")
+        # Stage the .app alongside Setup.command so end users can run the
+        # script once to clear macOS quarantine, then double-click the .app.
+        stage = DIST_DIR / APP_NAME
+        if stage.exists():
+            shutil.rmtree(stage)
+        stage.mkdir(parents=True)
+        run(["ditto", str(DIST_DIR / f"{APP_NAME}.app"),
+             str(stage / f"{APP_NAME}.app")])
+        setup_src = ROOT / "mac" / "Setup.command"
+        setup_dst = stage / "Setup.command"
+        shutil.copy2(setup_src, setup_dst)
+        setup_dst.chmod(0o755)
+        print(f"\nZipping {stage} -> {out} (ditto)")
         run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent",
-             str(src), str(out)])
+             str(stage), str(out)])
     else:
         src = DIST_DIR / APP_NAME
         if not src.exists():
