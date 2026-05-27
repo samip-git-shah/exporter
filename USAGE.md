@@ -21,28 +21,43 @@ The app is ad-hoc signed but **not notarized** by Apple, so on macOS 15
 
 > *"Apple could not verify 'TestCaseExporter.app' is free of malware..."*
 
-This is normal for unsigned apps. Choose one of the two unblock paths below.
+This is normal for unsigned apps. **Use the terminal command below — it's
+the only method that reliably works on macOS 15+.**
 
-### Option A — System Settings (no terminal needed)
-
-1. Unzip the download and move `TestCaseExporter.app` to **Applications/** (or anywhere you like).
-2. Double-click it — you will see the warning. Click **Done**.
-3. Open **System Settings → Privacy & Security**.
-4. Scroll to the *Security* section. You will see:
-   *"TestCaseExporter.app was blocked to protect your Mac."*
-5. Click **Open Anyway** → enter your password.
-6. Double-click the app again — it launches.
-
-You only need to do this once per machine.
-
-### Option B — One terminal command (faster for technical users)
+### Recommended — clear all extended attributes (one command)
 
 ```bash
-xattr -dr com.apple.quarantine /path/to/TestCaseExporter.app
+xattr -cr /path/to/TestCaseExporter.app
 ```
 
-Replace `/path/to/` with wherever you unzipped the app. After this, the app
-launches with a normal double-click — no warning.
+Replace `/path/to/` with wherever you unzipped the app (e.g.
+`~/Downloads/TestCaseExporter.app`). After this, the app launches with a
+normal double-click — no warning.
+
+> **Why `-cr` and not `-dr com.apple.quarantine`?** macOS quarantines every
+> file inside the bundle, not just the `.app` wrapper. The `-cr` flag clears
+> *all* extended attributes recursively; `-dr com.apple.quarantine` only
+> drops one specific attribute, which can leave nested binaries (Chromium's
+> framework) blocked and the app fails silently.
+
+### Why "Open Anyway" alone often fails
+
+Using **System Settings → Privacy & Security → Open Anyway** dismisses the
+warning on the outer `.app` but leaves the quarantine flag set on every
+nested binary. The app appears to launch and then immediately exits with
+no error. If you've already clicked "Open Anyway" and the app still won't
+launch, run the `xattr -cr` command above.
+
+### Diagnosing a silent failure
+
+If double-clicking still does nothing after `xattr -cr`, run the inner
+binary directly so any error becomes visible:
+
+```bash
+/path/to/TestCaseExporter.app/Contents/MacOS/TestCaseExporter
+```
+
+Then send the terminal output to support — that's the actionable error.
 
 ---
 
